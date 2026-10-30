@@ -1,0 +1,278 @@
+# CI/CD for cbp-order-processing → Azure Functions (Python 3.12, Flex Consumption)
+#
+# Architecture: OIDC federated identity — NO secrets stored in GitHub.
+# Auth uses short-lived tokens exchanged via GitHub OIDC provider ↔ Microsoft Entra ID.
+# See Confluence: Azure Github CI/CD Pipeline design pattern
+#
+# GitHub Environments (repo → Settings → Environments):
+#   dev   — self-approval allowed (repo secret APPROVERS)
+#   qa    — deployment is commented out below
+#   prod  — separate reviewers (repo secret APPROVERS_PROD); initiator cannot approve
+# Each environment has these secrets:
+#   AZURE_CLIENT_ID       — App Registration client ID (github-actions-cicd)
+#   AZURE_TENANT_ID       — Azure AD tenant ID
+#   AZURE_SUBSCRIPTION_ID — Azure subscription ID
+
+
+name: Azure Functions — cbp-order-processing
+
+on:
+  push:
+    branches:
+      - develop
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "function_app.py"
+      - "requirements.txt"
+      - "host.json"
+      - "pytest.ini"
+      - ".github/workflows/azure-functions-cbp-order-processing.yaml"
+
+  pull_request:
+    branches:
+      - develop
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "function_app.py"
+      - "requirements.txt"
+      - "host.json"
+      - "pytest.ini"
+      - ".github/workflows/azure-functions-cbp-order-processing.yaml"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Job 1: Runs on every PR — test, no deployment
+  # ─────────────────────────────────────────────────────────────────
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    name: Validate (test) — PR
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short --cov=src --cov-report=term-missing
+        env:
+          FUNCTIONS_WORKER_RUNTIME: python
+          AzureWebJobsFeatureFlags: EnableWorkerIndexing
+          ORDER_PROCESS_CRON: "0 */5 * * * *"
+          CBP_TOKEN_URL: https://example.invalid/token
+          CBP_ORDER_LIST_URL: https://example.invalid/orderlist
+          CBP_ORDER_DETAIL_URL: https://example.invalid/order
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 2: DEV approval — self-approval allowed (APPROVERS)
+  # ─────────────────────────────────────────────────────────────────
+  await-approval:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    name: Await approval — dev
+    permissions:
+      issues: write
+      contents: read
+
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ secrets.APPROVERS }}
+          minimum-approvals: 1
+          issue-title: "Deployment approval required → dev"
+          issue-body: |
+            A deployment to **dev** is waiting for your approval.
+
+            - **Repository**: ${{ github.repository }}
+            - **Branch**: ${{ github.ref_name }}
+            - **Triggered by**: ${{ github.actor }}
+            - **Commit**: ${{ github.sha }}
+
+            Comment **approved** to proceed or **denied** to cancel.
+          issue-assignees: ${{ secrets.APPROVERS }}
+          exclude-workflow-initiator-as-approver: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 3: Deploy to DEV — runs only after approval is granted above
+  # ─────────────────────────────────────────────────────────────────
+  deploy-dev:
+    if: github.event_name == 'push'
+    needs: [await-approval]
+    runs-on: ubuntu-latest
+    name: Deploy → dev
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies into package directory
+        run: |
+          pip install \
+            --target=".python_packages/lib/site-packages" \
+            --upgrade \
+            -r requirements.txt
+
+      - name: Log in to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy to Azure Function App (dev)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: dev-cbp-order-processing-fn
+          package: .
+          scm-do-build-during-deployment: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 4: QA approval — commented out
+  # ─────────────────────────────────────────────────────────────────
+  # await-approval-qa:
+  #   if: github.event_name == 'push'
+  #   needs: deploy-dev
+  #   runs-on: ubuntu-latest
+  #   name: Await approval — qa
+  #   permissions:
+  #     issues: write
+  #     contents: read
+  #   steps:
+  #     - uses: trstringer/manual-approval@v1
+  #       with:
+  #         secret: ${{ github.TOKEN }}
+  #         approvers: ${{ secrets.APPROVERS_QA }}
+  #         minimum-approvals: 1
+  #         issue-title: "Deployment approval required → qa"
+  #         issue-body: |
+  #           A deployment to **qa** is waiting for your approval.
+  #
+  #           - **Repository**: ${{ github.repository }}
+  #           - **Branch**: ${{ github.ref_name }}
+  #           - **Triggered by**: ${{ github.actor }}
+  #           - **Commit**: ${{ github.sha }}
+  #
+  #           Comment **approved** to proceed or **denied** to cancel.
+  #         issue-assignees: ${{ secrets.APPROVERS_QA }}
+  #         exclude-workflow-initiator-as-approver: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 5: Deploy to QA — commented out
+  # ─────────────────────────────────────────────────────────────────
+  # deploy-qa:
+  #   if: github.event_name == 'push'
+  #   needs: [await-approval-qa]
+  #   runs-on: ubuntu-latest
+  #   name: Deploy → qa
+  #   environment: qa
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.12"
+  #         cache: pip
+  #         cache-dependency-path: requirements.txt
+  #     - name: Install dependencies into package directory
+  #       run: |
+  #         pip install --target=".python_packages/lib/site-packages" --upgrade -r requirements.txt
+  #     - name: Log in to Azure (OIDC)
+  #       uses: azure/login@v2
+  #       with:
+  #         client-id: ${{ secrets.AZURE_CLIENT_ID }}
+  #         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+  #         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  #     - name: Deploy to Azure Function App (qa)
+  #       uses: Azure/functions-action@v1
+  #       with:
+  #         app-name: qa-cbp-order-processing-fn
+  #         package: .
+  #         scm-do-build-during-deployment: false
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 6: Approval gate for PROD — runs after the dev deploy succeeds
+  # ─────────────────────────────────────────────────────────────────
+  await-approval-prod:
+    if: github.event_name == 'push'
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    name: Await approval — prod
+    permissions:
+      issues: write
+      contents: read
+    steps:
+      - uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ secrets.APPROVERS_PROD }}
+          minimum-approvals: 1
+          issue-title: "Deployment approval required → prod"
+          issue-body: |
+            A deployment to **prod** is waiting for your approval.
+
+            - **Repository**: ${{ github.repository }}
+            - **Branch**: ${{ github.ref_name }}
+            - **Triggered by**: ${{ github.actor }}
+            - **Commit**: ${{ github.sha }}
+
+            Comment **approved** to proceed or **denied** to cancel.
+          issue-assignees: ${{ secrets.APPROVERS_PROD }}
+          exclude-workflow-initiator-as-approver: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # Job 7: Deploy to PROD
+  # ─────────────────────────────────────────────────────────────────
+  deploy-prod:
+    if: github.event_name == 'push'
+    needs: [await-approval-prod]
+    runs-on: ubuntu-latest
+    name: Deploy → prod
+    environment: prod
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies into package directory
+        run: |
+          pip install --target=".python_packages/lib/site-packages" --upgrade -r requirements.txt
+      - name: Log in to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy to Azure Function App (prod)
+        uses: Azure/functions-action@v1
+        with:
+          app-name: prod-cbp-order-processing-fn
+          package: .
+          scm-do-build-during-deployment: false

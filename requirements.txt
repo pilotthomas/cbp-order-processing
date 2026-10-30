@@ -1,0 +1,24 @@
+# Runtime (Azure Functions)
+azure-functions
+azure-identity
+azure-keyvault-secrets
+azure-storage-blob
+azure-communication-email
+tzdata
+fastapi
+pydantic-settings
+python-dotenv
+python-jose[cryptography]
+python-multipart
+pypdf
+sqlalchemy
+pyodbc
+requests
+defusedxml
+ 
+# Local run / tests
+httpx
+uvicorn
+pytest
+pytest-mock
+pytest-cov
