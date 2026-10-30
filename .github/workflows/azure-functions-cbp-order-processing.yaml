@@ -7,7 +7,7 @@
 # GitHub Environments (repo → Settings → Environments):
 #   dev   — self-approval allowed (repo secret APPROVERS)
 #   qa    — deployment is commented out below
-#   prod  — separate reviewers (repo secret APPROVERS_PROD); initiator cannot approve
+#   prod  — deployment is commented out below
 # Each environment has these secrets:
 #   AZURE_CLIENT_ID       — App Registration client ID (github-actions-cicd)
 #   AZURE_TENANT_ID       — Azure AD tenant ID
@@ -213,66 +213,66 @@ jobs:
   #         scm-do-build-during-deployment: false
 
   # ─────────────────────────────────────────────────────────────────
-  # Job 6: Approval gate for PROD — runs after the dev deploy succeeds
+  # Job 6: Approval gate for PROD — commented out
   # ─────────────────────────────────────────────────────────────────
-  await-approval-prod:
-    if: github.event_name == 'push'
-    needs: deploy-dev
-    runs-on: ubuntu-latest
-    name: Await approval — prod
-    permissions:
-      issues: write
-      contents: read
-    steps:
-      - uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ github.TOKEN }}
-          approvers: ${{ secrets.APPROVERS_PROD }}
-          minimum-approvals: 1
-          issue-title: "Deployment approval required → prod"
-          issue-body: |
-            A deployment to **prod** is waiting for your approval.
-
-            - **Repository**: ${{ github.repository }}
-            - **Branch**: ${{ github.ref_name }}
-            - **Triggered by**: ${{ github.actor }}
-            - **Commit**: ${{ github.sha }}
-
-            Comment **approved** to proceed or **denied** to cancel.
-          issue-assignees: ${{ secrets.APPROVERS_PROD }}
-          exclude-workflow-initiator-as-approver: true
+  # await-approval-prod:
+  #   if: github.event_name == 'push'
+  #   needs: deploy-dev
+  #   runs-on: ubuntu-latest
+  #   name: Await approval — prod
+  #   permissions:
+  #     issues: write
+  #     contents: read
+  #   steps:
+  #     - uses: trstringer/manual-approval@v1
+  #       with:
+  #         secret: ${{ github.TOKEN }}
+  #         approvers: ${{ secrets.APPROVERS_PROD }}
+  #         minimum-approvals: 1
+  #         issue-title: "Deployment approval required → prod"
+  #         issue-body: |
+  #           A deployment to **prod** is waiting for your approval.
+  #
+  #           - **Repository**: ${{ github.repository }}
+  #           - **Branch**: ${{ github.ref_name }}
+  #           - **Triggered by**: ${{ github.actor }}
+  #           - **Commit**: ${{ github.sha }}
+  #
+  #           Comment **approved** to proceed or **denied** to cancel.
+  #         issue-assignees: ${{ secrets.APPROVERS_PROD }}
+  #         exclude-workflow-initiator-as-approver: true
 
   # ─────────────────────────────────────────────────────────────────
-  # Job 7: Deploy to PROD
+  # Job 7: Deploy to PROD — commented out
   # ─────────────────────────────────────────────────────────────────
-  deploy-prod:
-    if: github.event_name == 'push'
-    needs: [await-approval-prod]
-    runs-on: ubuntu-latest
-    name: Deploy → prod
-    environment: prod
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements.txt
-      - name: Install dependencies into package directory
-        run: |
-          pip install --target=".python_packages/lib/site-packages" --upgrade -r requirements.txt
-      - name: Log in to Azure (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      - name: Deploy to Azure Function App (prod)
-        uses: Azure/functions-action@v1
-        with:
-          app-name: prod-cbp-order-processing-fn
-          package: .
-          scm-do-build-during-deployment: false
+  # deploy-prod:
+  #   if: github.event_name == 'push'
+  #   needs: [await-approval-prod]
+  #   runs-on: ubuntu-latest
+  #   name: Deploy → prod
+  #   environment: prod
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-python@v5
+  #       with:
+  #         python-version: "3.12"
+  #         cache: pip
+  #         cache-dependency-path: requirements.txt
+  #     - name: Install dependencies into package directory
+  #       run: |
+  #         pip install --target=".python_packages/lib/site-packages" --upgrade -r requirements.txt
+  #     - name: Log in to Azure (OIDC)
+  #       uses: azure/login@v2
+  #       with:
+  #         client-id: ${{ secrets.AZURE_CLIENT_ID }}
+  #         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+  #         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  #     - name: Deploy to Azure Function App (prod)
+  #       uses: Azure/functions-action@v1
+  #       with:
+  #         app-name: prod-cbp-order-processing-fn
+  #         package: .
+  #         scm-do-build-during-deployment: false
