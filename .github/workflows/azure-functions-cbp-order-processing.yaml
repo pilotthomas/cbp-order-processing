@@ -1,4 +1,4 @@
-# CI/CD for cbp-order-processing → Azure Functions (Python 3.12, Flex Consumption)
+# CI/CD for cbp-order-processing → Azure Functions (Python 3.14, Flex Consumption)
 #
 # Architecture: OIDC federated identity — NO secrets stored in GitHub.
 # Auth uses short-lived tokens exchanged via GitHub OIDC provider ↔ Microsoft Entra ID.
@@ -57,7 +57,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements.txt
 
@@ -122,7 +122,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
           cache: pip
           cache-dependency-path: requirements.txt
 
@@ -193,7 +193,7 @@ jobs:
   #     - uses: actions/checkout@v4
   #     - uses: actions/setup-python@v5
   #       with:
-  #         python-version: "3.12"
+  #         python-version: "3.14"
   #         cache: pip
   #         cache-dependency-path: requirements.txt
   #     - name: Install dependencies into package directory
@@ -258,7 +258,7 @@ jobs:
   #     - uses: actions/checkout@v4
   #     - uses: actions/setup-python@v5
   #       with:
-  #         python-version: "3.12"
+  #         python-version: "3.14"
   #         cache: pip
   #         cache-dependency-path: requirements.txt
   #     - name: Install dependencies into package directory
